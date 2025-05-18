@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 use std::io::Write;
 use std::error::Error;
 
-
+#[derive(Clone)]
 pub struct Graph {
     num_vertices: u8,
     edges: Vec<(u8, u8)>,
@@ -99,6 +99,93 @@ impl Graph {
         result
     }
 
+    pub fn add_edge_across(&self, e1idx : usize, e2idx: usize) -> Graph
+    {
+        // creates new vertices on the edges with indices e1idx and e1idx, and joins them by an edge
+        assert_ne!(e1idx, e2idx, "Edges must be distinct");
+        let new_n = self.num_vertices + 2;
+        let n = self.num_vertices;
+        let mut new_edges = vec![];
+        let v1 = n;
+        let v2 = n+1;
+        for i in 0..n {
+            let (u,v) = self.edges[i];
+            if i==e1idx {
+                new_edges.push((u,v1));
+                new_edges.push((v,v1));
+                new_edges.push((v1,v2));
+            } else if i == e2idx {
+                new_edges.push((u,v2));
+                new_edges.push((v,v2));
+            } else {
+                new_edges.push( (u,v) );
+            }
+        }
+        new_edges.sort();
+        Graph {
+            num_vertices: new_n,
+            edges: new_edges,
+        }
+    }
+
+    pub fn union(&self, other : &Graph) -> Graph {
+        let new_n = self.num_vertices + other.num_vertices;
+        // join the two edges vectors
+        let mut edges = self.edges.clone();
+        edges.extend(
+            other
+                .edges
+                .iter()
+                .map(|&(u, v)| (u + self.num_vertices, v + self.num_vertices)),
+        );
+        Graph {
+            num_vertices: new_n,
+            edges,
+        }
+    }
+
+
+    pub fn contract_edge(&self, eidx : usize) -> Graph {
+        let new_n = self.num_vertices-1;
+        let (u,v) = self.edges[eidx];
+        assert!(u<v);
+
+        let new_edges = self.edges.iter()
+                .enumerate()
+                .filter_map(|(i, &(a, b))| {
+                    if i == eidx {
+                        return None;
+                    }
+                    let aa = if a < v { a } else if a == v { u } else { a - 1 };
+                    let bb = if b < v { b } else if b == v { u } else { b - 1 };
+                    if aa < bb {
+                        Some((aa, bb))
+                    } else if bb < aa {
+                        Some((bb, aa))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<HashSet<_>>() // remove duplicates
+                .into_iter()
+                .collect::<Vec<_>>(); // convert to Vec
+        
+        
+        Graph {
+            num_vertices : new_n,
+            edges : new_edges,
+        }
+    }
+
+    pub fn contract_edge_opt(&self, eidx : usize) -> Option<Graph> {
+        let g = self.contract_edge(eidx);
+        if g.edges.len() +1  == self.edges.len() {
+            Some(g)
+        } else {
+            None
+        }
+    }
+
     pub fn from_g6(g6: &str) -> Graph {
         let bytes = g6.as_bytes();
         assert!(!bytes.is_empty(), "Empty g6 string");
@@ -147,6 +234,63 @@ impl Graph {
             edges,
         }
     }
+
+    pub fn save_to_file(g6_list: &[String], filename: &str) -> std::io::Result<()> {
+        let mut file = std::fs::File::create(filename)?;
+        // first line is number of graphs
+        writeln!(file, "{}", g6_list.len())?;
+        // write each graph6 string
+        for g6 in g6_list {
+            writeln!(file, "{}", g6)?;
+        }
+        Ok(())
+    }
+
+    pub fn load_from_file(filename: &str) -> std::io::Result<Vec<String>> {
+        let file = std::fs::File::open(filename)?;
+        let reader = std::io::BufReader::new(file);
+        // read first line and trsnform to int
+        let mut lines = reader.lines();
+        let first_line = lines.next().unwrap()?;
+        let num_graphs: usize = first_line.trim().parse().unwrap();
+        let mut g6_list = Vec::new();
+        for line in lines.take(num_graphs) {
+            let g6 = line?;
+            g6_list.push(g6);
+        }
+        if g6_list.len() != num_graphs {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Number of graphs in file does not match the first line",
+            ));
+        }
+        Ok(g6_list)
+    }
+
+    pub fn tetrahedron_graph() -> Graph {
+        Graph {
+            num_vertices : 4,
+            edges : vec![(0,1),(0,2),(0,3),(1,2),(1,3),(2,3)]
+        }
+    }
+
+    pub fn tetrastring_graph(n_blocks : u8) -> Graph {
+        let n = 4*n_blocks;
+        let mut edges = vec![];
+        for i in 0..n_blocks {
+            edges.push((4*i, 4*i+1));
+            edges.push((4*i, 4*i+2));
+            edges.push((4*i+1, 4*i+2));
+            edges.push((4*i+1, 4*i+3));
+            edges.push((4*i+2, 4*i+3));
+            edges.push((4*i, 4*((i+1)%n_blocks)));
+        }
+        Graph {
+            num_vertices : n,
+            edges
+        }
+
+    }
 }
 
 
@@ -187,6 +331,94 @@ where
     Ok(canonical_g6s)
 }
 
+
+
+pub fn generate_graphs(g : usize, d : usize) -> Result<(), Box<dyn std::error::Error>> {
+    // d is the defect
+
+    if g<3 || d < 0 || d +8 > 2*g {
+        println!("Warning: generate_graphs called with non-satisfiable paramters.");
+        return Ok(());
+    }
+    let n = 3*g-3 -d;
+    let e = 2*g-2-d; 
+
+    assert!(n*(n-1)/2 >= e);
+
+    let filename = format!("data/graphs{}_{}.g6", g, d);
+    if d>0 {
+        // contract an edge
+        let otherfilename = format!("data/graphs{}_{}.g6", g, d-1);
+        let g6s = Graph::load_from_file(&otherfilename)?;
+        let g6_iter = g6s.into_iter().map(|s| Graph::from_g6(&s))
+                    .flat_map(move |g| (0..=e).filter_map(move |idx| g.contract_edge_opt(idx) ))
+                    .map(|g| g.to_g6());
+        let g6_canon = canonicalize_and_dedup_g6(g6_iter)?;
+        let g6_vec: Vec<String> = g6_canon.into_iter().collect();
+        Graph::save_to_file(&g6_vec, &filename)?;
+
+    } else if d==0 {
+        // start with the tetrastring
+        let mut g6list = vec![];
+        if g%2 == 1 
+        {
+            g6list.push(Graph::tetrastring_graph(((g-1)/2) as u8).to_g6());
+        }
+
+        for l1 in 3..g-3 {
+            let l2 = g-l1;
+            if l1<l2 {
+                continue;
+            } 
+            let fname1 = format!("data/graphs{}_{}.g6", l1, 0);
+            let fname2 = format!("data/graphs{}_{}.g6", l2, 0);
+            let g6s1 = Graph::load_from_file(&fname1)?;
+            let g6s2 = Graph::load_from_file(&fname2)?;
+            let g6s1 = g6s1.into_iter().map(|s| Graph::from_g6(&s)).collect::<Vec<_>>();
+            let g6s2 = g6s2.into_iter().map(|s| Graph::from_g6(&s)).collect::<Vec<_>>();
+            for g1 in g6s1.iter() {
+                let e1 = g1.edges.len();
+                for g2 in g6s2.iter() {
+                    let e2 = g2.edges.len();
+                    let gg = g1.union(g2);
+
+                    for i in 0..e1 {
+                        for j in 0..e2 {
+                            let ggg = gg.add_edge_across(i, j+e1);
+                            g6list.push(ggg.to_g6());
+                        }
+                    }
+                }
+            }
+        }
+
+        
+        // add graphs obtained by connecting two edges
+        if g>3 {
+            let otherfname = format!("data/graphs{}_0.g6", g-1);
+            let g6s = Graph::load_from_file(&otherfname)?;
+            let ee = e-3;
+
+            let g6s = g6s.into_iter().map(|s| Graph::from_g6(&s))
+                        .flat_map(move |g| (0..ee).flat_map(
+                            |j| (j+1..ee).map(|k| 
+                                g.add_edge_across(j, k).to_g6()
+                            ) 
+                        )).collect();
+            g6list.extend(g6s);
+
+        }
+        
+
+
+
+        let g6_canon = canonicalize_and_dedup_g6(g6list)?;
+        let g6_vec: Vec<String> = g6_canon.into_iter().collect();
+        Graph::save_to_file(&g6_vec, &filename)?;
+    }
+
+    Ok(())
+}
 
 
 #[cfg(test)]
