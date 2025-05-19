@@ -3,7 +3,21 @@ use rand::Rng;
 use std::collections::HashSet;
 use std::process::{Command, Stdio};
 use std::io::Write;
+use std::io::BufRead;
+use std::io::BufReader;
 use std::error::Error;
+use std::thread;
+use std::time::Instant;
+use rayon::prelude::*;
+
+
+use std::ffi::{CString, CStr};
+use std::os::raw::c_char;
+use std::ptr;
+
+// unsafe extern "C" {
+//     fn canonicalize_g6(input: *const c_char, output: *mut c_char, output_size: usize);
+// }
 
 #[derive(Clone)]
 pub struct Graph {
@@ -108,7 +122,7 @@ impl Graph {
         let mut new_edges = vec![];
         let v1 = n;
         let v2 = n+1;
-        for i in 0..n {
+        for i in 0..self.edges.len() {
             let (u,v) = self.edges[i];
             if i==e1idx {
                 new_edges.push((u,v1));
@@ -119,6 +133,38 @@ impl Graph {
                 new_edges.push((v,v2));
             } else {
                 new_edges.push( (u,v) );
+            }
+        }
+        new_edges.sort();
+        Graph {
+            num_vertices: new_n,
+            edges: new_edges,
+        }
+    }
+
+    pub fn replace_edge_by_tetra(&self, eidx : usize) -> Graph {
+        // replaces the edge with index eidx by a tetrahedron
+        let new_n = self.num_vertices + 4;
+        let (u,v) = self.edges[eidx];
+        assert!(u<v);
+
+        let mut new_edges = vec![];
+        for i in 0..self.edges.len() {
+            let (a,b) = self.edges[i];
+            if i==eidx {
+                let v1= new_n-4;
+                let v2= new_n-3;
+                let v3= new_n-2;
+                let v4= new_n-1;
+                new_edges.push((u, v1));
+                new_edges.push((v1, v2));
+                new_edges.push((v1, v3));
+                new_edges.push((v2, v4));
+                new_edges.push((v3, v4));
+                new_edges.push((v2, v3));
+                new_edges.push((v, v4));
+            } else {
+                new_edges.push( (a,b) );
             }
         }
         new_edges.sort();
@@ -254,7 +300,7 @@ impl Graph {
         let first_line = lines.next().unwrap()?;
         let num_graphs: usize = first_line.trim().parse().unwrap();
         let mut g6_list = Vec::new();
-        for line in lines.take(num_graphs) {
+        for line in lines { // .take(num_graphs) {
             let g6 = line?;
             g6_list.push(g6);
         }
@@ -263,6 +309,19 @@ impl Graph {
                 std::io::ErrorKind::InvalidData,
                 "Number of graphs in file does not match the first line",
             ));
+        }
+        Ok(g6_list)
+    }
+
+    pub fn load_from_file_nohdr(filename: &str) -> std::io::Result<Vec<String>> {
+        let file = std::fs::File::open(filename)?;
+        let reader = std::io::BufReader::new(file);
+        // read first line and trsnform to int
+        let lines = reader.lines();
+        let mut g6_list = Vec::new();
+        for line in lines {
+            let g6 = line?;
+            g6_list.push(g6);
         }
         Ok(g6_list)
     }
@@ -283,7 +342,11 @@ impl Graph {
             edges.push((4*i+1, 4*i+2));
             edges.push((4*i+1, 4*i+3));
             edges.push((4*i+2, 4*i+3));
-            edges.push((4*i, 4*((i+1)%n_blocks)));
+            if i== n_blocks-1 {
+                edges.push((0, 4*i+3));
+            } else {
+                edges.push((4*i+3, 4*i+4));
+            }
         }
         Graph {
             num_vertices : n,
@@ -291,87 +354,212 @@ impl Graph {
         }
 
     }
+
+    pub fn print(&self) {
+        println!("Graph with {} vertices and {} edges. G6 code: {}.", self.num_vertices, self.edges.len(), self.to_g6());
+        for (u,v) in &self.edges {
+            println!("{} {}", u, v);
+        }
+    }
 }
 
+pub fn create_geng_ref(l: usize, d : usize) {
+    let n = 2 * l - 2 - d;
+    let e = 3*l-3- d;
+    let filename = format!("data/ref/graphs{}_{}.geng", l, d);
 
+    let geng_cmd = format!(
+        "geng {} {}:{} -d3 -c -l > {}",
+        n, e,e, filename
+    );
+
+    let status = Command::new("sh")
+        .arg("-c")
+        .arg(&geng_cmd)
+        .status()
+        .expect("Failed to run geng command");
+
+    if !status.success() {
+        panic!("geng command failed with status: {:?}", status);
+    }
+}
+
+const BATCH_SIZE: usize = 10000;
+
+// pub fn canonicalize_and_dedup_g6<I>(g6_iter: I) -> Result<HashSet<String>, Box<dyn Error>>
+// where
+//     I: IntoIterator<Item = String>,
+// {
+//     let mut seen = HashSet::new();
+//     let mut out_buf = vec![0u8; 1024];
+
+//     for g6 in g6_iter {
+//         let c_input = CString::new(g6).expect("Invalid g6 input");
+//         unsafe {
+//             let out_ptr = out_buf.as_mut_ptr() as *mut c_char;
+//             canonicalize_g6(c_input.as_ptr(), out_ptr, out_buf.len());
+//             let c_output = CStr::from_ptr(out_ptr);
+//             if let Ok(s) = c_output.to_str() {
+//                 seen.insert(s.to_owned());
+//             }
+//         }
+//     }
+
+//     Ok(seen)
+// }
+
+/// Run g6 strings through `labelg` in batches and deduplicate the canonical results.
 fn canonicalize_and_dedup_g6<I>(
     g6_iter: I,
 ) -> Result<HashSet<String>, Box<dyn Error>>
 where
     I: IntoIterator<Item = String>,
 {
-    let labelg_path = "labelg";
+    let mut canonical_set = HashSet::new();
+    let labelg_path = "labelg"; // Path to the labelg executable
 
-    // Launch `labelg -g` subprocess
+    // let mut batch = Vec::with_capacity(BATCH_SIZE);
+    // for g6 in g6_iter.into_iter() {
+    //     batch.push(g6);
+    //     if batch.len() >= BATCH_SIZE {
+    //         let canonicals = run_labelg_batch(&batch, labelg_path)?;
+    //         canonical_set.extend(canonicals);
+    //         batch.clear();
+    //     }
+    // }
+    let mut all_g6: Vec<String> = g6_iter.into_iter().collect();
+    let batches: Vec<_> = all_g6.chunks(BATCH_SIZE).map(|c| c.to_vec()).collect();
+
+    let results: Vec<HashSet<String>> = batches
+        .par_iter()
+        .map(|batch| run_labelg_batch(batch, labelg_path).unwrap())
+        .collect();
+
+    for res in results {
+        let canonicals = res;
+        canonical_set.extend(canonicals);
+    }
+
+    // Process any remaining graphs
+    // if !batch.is_empty() {
+    //     let canonicals = run_labelg_batch(&batch, labelg_path)?;
+    //     canonical_set.extend(canonicals);
+    // }
+
+    Ok(canonical_set)
+}
+
+/// Helper to run one batch of g6 strings through labelg and collect output.
+fn run_labelg_batch(
+    batch: &[String],
+    labelg_path: &str,
+) -> Result<HashSet<String>, Box<dyn Error>> {
     let mut child = Command::new(labelg_path)
-        .arg("-g") // output graph6 format
+        .arg("-g")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .stderr(Stdio::null())
         .spawn()?;
 
-    // Write all input g6 strings to stdin
-    {
-        let stdin = child.stdin.as_mut().ok_or("Failed to open stdin")?;
-        for g6 in g6_iter {
-            writeln!(stdin, "{}", g6)?;
+    // Take ownership of stdin and move it to a thread for writing
+    let mut stdin = child.stdin.take().ok_or("Failed to open stdin")?;
+    let input_batch = batch.to_owned();
+    let writer_handle = thread::spawn(move || {
+        for g6 in input_batch {
+            // We ignore errors here; the read side handles subprocess failure
+            let _ = writeln!(stdin, "{}", g6);
         }
+    });
+
+    // Read from stdout in the main thread
+    let stdout = child.stdout.take().ok_or("Failed to open stdout")?;
+    let reader = BufReader::new(stdout);
+    let mut canonicals = HashSet::new();
+
+    for line in reader.lines() {
+        let line = line?;
+        canonicals.insert(line);
     }
 
-    // Collect and parse canonical outputs
-    let output = child.wait_with_output()?;
-    if !output.status.success() {
-        return Err("labelg failed".into());
+    // Ensure the writing thread finishes
+    writer_handle.join().expect("Writer thread panicked");
+
+    let status = child.wait()?;
+    if !status.success() {
+        return Err(format!("labelg failed with exit code {:?}", status.code()).into());
     }
 
-    let canonical_g6s = String::from_utf8(output.stdout)?
-        .lines()
-        .map(str::to_string)
-        .collect::<HashSet<_>>();
-
-    Ok(canonical_g6s)
+    Ok(canonicals)
 }
 
 
+pub fn is_satisfiable(g: usize, d: usize) -> bool {
+    // d is the defect
+    if g < 3 {
+        return false;
+    }
+    let n = 2 * g - 2 - d;
+    let e = 3 * g - 3 - d;
+
+    if n * (n - 1) / 2 < e {
+        return false;
+    }
+    true
+}
 
 pub fn generate_graphs(g : usize, d : usize) -> Result<(), Box<dyn std::error::Error>> {
     // d is the defect
+    println!("Generating graphs with genus {} and defect {}...", g, d);
 
-    if g<3 || d < 0 || d +8 > 2*g {
+    if g<3  {
         println!("Warning: generate_graphs called with non-satisfiable paramters.");
         return Ok(());
     }
-    let n = 3*g-3 -d;
-    let e = 2*g-2-d; 
+    let n = 2*g-2 -d;
+    let e = 3*g-3-d; 
 
-    assert!(n*(n-1)/2 >= e);
+    if n*(n-1)/2 < e {
+        println!("Warning: generate_graphs called with non-satisfiable paramters.");
+        return Ok(());
+    }
 
     let filename = format!("data/graphs{}_{}.g6", g, d);
     if d>0 {
         // contract an edge
         let otherfilename = format!("data/graphs{}_{}.g6", g, d-1);
         let g6s = Graph::load_from_file(&otherfilename)?;
-        let g6_iter = g6s.into_iter().map(|s| Graph::from_g6(&s))
-                    .flat_map(move |g| (0..=e).filter_map(move |idx| g.contract_edge_opt(idx) ))
-                    .map(|g| g.to_g6());
-        let g6_canon = canonicalize_and_dedup_g6(g6_iter)?;
+        let g6list: Vec<String> = g6s
+            .par_iter()
+            .map(|s| Graph::from_g6(s))
+            .flat_map_iter(|g| (0..=e).filter_map(move |idx| g.contract_edge_opt(idx)))
+            .map(|g| g.to_g6())
+            .collect();
+        println!("{} graphs generated, deduplicating...", g6list.len());
+        let start = Instant::now();
+        let g6_canon = canonicalize_and_dedup_g6(g6list)?;
+        println!("Deduplication took {:.2?}, {} unique graphs remaining.", start.elapsed(), g6_canon.len());
         let g6_vec: Vec<String> = g6_canon.into_iter().collect();
         Graph::save_to_file(&g6_vec, &filename)?;
 
     } else if d==0 {
         // start with the tetrastring
         let mut g6list = vec![];
-        if g%2 == 1 
+        if g==3 //g%2 == 1 
         {
             g6list.push(Graph::tetrastring_graph(((g-1)/2) as u8).to_g6());
         }
 
-        for l1 in 3..g-3 {
+        // connect two components
+        println!("... connecting two components ...");
+        for l1 in 3..g-2 {
             let l2 = g-l1;
             if l1<l2 {
                 continue;
             } 
             let fname1 = format!("data/graphs{}_{}.g6", l1, 0);
             let fname2 = format!("data/graphs{}_{}.g6", l2, 0);
+            println!("{} graphs loaded from {}...", l1, fname1);
+            println!("{} graphs loaded from {}...", l2, fname2);
             let g6s1 = Graph::load_from_file(&fname1)?;
             let g6s2 = Graph::load_from_file(&fname2)?;
             let g6s1 = g6s1.into_iter().map(|s| Graph::from_g6(&s)).collect::<Vec<_>>();
@@ -392,27 +580,65 @@ pub fn generate_graphs(g : usize, d : usize) -> Result<(), Box<dyn std::error::E
             }
         }
 
+        // add a tetra across an edge
+        println!("... adding tetras ...");
+        if g>=5 {
+            let l1 = g-2;
+            let otherfname = format!("data/graphs{}_0.g6", l1);
+            let g6s = Graph::load_from_file(&otherfname)?;
+            println!("{} graphs loaded from {}...", g6s.len(), otherfname);
+            for (id,gg) in g6s.into_iter().map(|s| Graph::from_g6(&s)).enumerate(){
+                if id % 100 == 0 {
+                    println!("{} graphs processed...", id);
+                }
+                for i in 0..gg.edges.len() {
+                    let ggg = gg.replace_edge_by_tetra(i);
+                    g6list.push(ggg.to_g6());
+                }
+            }
+        }
         
         // add graphs obtained by connecting two edges
+        println!("... connecting edges ...");
         if g>3 {
             let otherfname = format!("data/graphs{}_0.g6", g-1);
             let g6s = Graph::load_from_file(&otherfname)?;
+            println!("{} graphs loaded from {}...", g6s.len(), otherfname);
             let ee = e-3;
 
-            let g6s = g6s.into_iter().map(|s| Graph::from_g6(&s))
-                        .flat_map(move |g| (0..ee).flat_map(
-                            |j| (j+1..ee).map(|k| 
-                                g.add_edge_across(j, k).to_g6()
-                            ) 
-                        )).collect();
-            g6list.extend(g6s);
+            let new_g6s: Vec<String> = g6s
+                .par_iter()
+                .enumerate()
+                .flat_map_iter(|(id, s)| {
+                    if id % 1000 == 0 {
+                        println!("{} graphs processed...", id);
+                    }
+                    let gg = Graph::from_g6(s);
+                    // let gg = gg.clone();
+                    (0..ee)
+                        .flat_map(move |i| {
+                            let gg = gg.clone();
+                            ((i + 1)..ee).map(move |j| {
+                                let ggg = gg.add_edge_across(i, j);
+                                ggg.to_g6()
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect();
 
+            g6list.extend(new_g6s);
         }
         
+        // dedup g6list
+        // let mut set = HashSet::new();
+        // g6list.retain(|g| set.insert(g.clone()));
 
-
-
+        println!("{} graphs generated, deduplicating...", g6list.len());
+        let start = Instant::now();
         let g6_canon = canonicalize_and_dedup_g6(g6list)?;
+        println!("Deduplication took {:.2?}, {} unique graphs remaining.", start.elapsed(), g6_canon.len());
+
         let g6_vec: Vec<String> = g6_canon.into_iter().collect();
         Graph::save_to_file(&g6_vec, &filename)?;
     }
@@ -420,6 +646,28 @@ pub fn generate_graphs(g : usize, d : usize) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
+pub fn compare_file_to_ref(l : usize, d : usize) {
+        let filename = format!("data/graphs{}_{}.g6", l, d);
+        let refname = format!("data/ref/graphs{}_{}.geng", l, d);
+        let g6s = Graph::load_from_file(&filename).unwrap();
+        let g6_ref = Graph::load_from_file_nohdr(&refname).unwrap();
+        // assert_eq!(g6s.len(), g6_ref.len(), "Number of graphs in {} and {} do not match", filename, refname);
+        // take the difference of g6s and g6_ref as sets
+        let g6s_set: HashSet<_> = g6s.iter().map(|s| s.as_str()).collect();
+        let g6_ref_set: HashSet<_> = g6_ref.iter().map(|s| s.as_str()).collect();
+        let diff: Vec<_> = g6s_set.difference(&g6_ref_set).collect();
+        if !diff.is_empty() {
+            println!("Graphs in {} but not in {}: {:?}", filename, refname, diff);
+        }
+        assert!(diff.is_empty(), "Graphs in {} but not in {}", filename, refname);
+        // take the difference of g6_ref and g6s as sets
+        let diff: Vec<_> = g6_ref_set.difference(&g6s_set).collect();
+        if !diff.is_empty() {
+            println!("Graphs in {} but not in {}: {:?}", refname, filename, diff);
+        }
+        assert!(diff.is_empty(), "Graphs in {} but not in {}", refname, filename);
+        println!("Graphs in {} and {} match", filename, refname);
+}
 
 #[cfg(test)]
 mod tests {
@@ -434,6 +682,20 @@ mod tests {
         e1.sort();
         e2.sort();
         e1 == e2
+    }
+
+    
+
+    #[test]
+    fn test_filecompare() {
+        compare_file_to_ref(3, 0);
+        compare_file_to_ref(4, 0);
+        compare_file_to_ref(5, 0);
+        compare_file_to_ref(6, 0);
+        compare_file_to_ref(7, 0);
+        compare_file_to_ref(8, 0);
+        compare_file_to_ref(9, 0);
+        compare_file_to_ref(10, 0);
     }
 
     #[test]
@@ -496,5 +758,17 @@ mod tests {
                 panic!("canonicalize_and_dedup_g6 failed: {}", e);
             }
         }
+    }
+
+    #[test]
+    fn test_tetrahedron_equals_tetrastring_1() {
+        let g1 = Graph::tetrahedron_graph();
+        let g2 = Graph::tetrastring_graph(1);
+        assert!(
+            graphs_equal(&g1, &g2),
+            "Tetrahedron and tetrastring(1) should be equal: {:?} vs {:?}",
+            g1.edges,
+            g2.edges
+        );
     }
 }
