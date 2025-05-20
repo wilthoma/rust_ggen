@@ -1,5 +1,11 @@
 mod graphs;
 mod kneissler;
+// mod nauty_interface;
+// use nauty_interface::*;
+mod nauty_interface2;
+mod bliss_interface;
+use nauty_interface2::*;
+use bliss_interface::*;
 use graphs::*;
 use kneissler::*;
 
@@ -37,16 +43,22 @@ fn main() {
     //generate_graphs(12,1).unwrap();
 
     for l in 12..13 {
-        compute_all_kneissler_graphs(l, 0);
+        // compute_all_kneissler_graphs(l, 0);
         // compute_all_kneissler_graphs(l, 1);
         // compute_all_kneissler_graphs(l, 2);
         // compute_all_kneissler_graphs(l, 3);
     }
     
+    
 
     let duration = start.elapsed();
     println!("Time elapsed: {:?}", duration);
 
+    let g6 = "Dhc"; // Example: star graph on 4 vertices
+
+    mainz();
+
+    // nauty_interface::compute_automorphisms(g6);
 
     // generate_graphs(3,0).unwrap();
     // generate_graphs(4,0).unwrap();
