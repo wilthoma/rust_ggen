@@ -409,7 +409,7 @@ const BATCH_SIZE: usize = 10000;
 // }
 
 /// Run g6 strings through `labelg` in batches and deduplicate the canonical results.
-fn canonicalize_and_dedup_g6<I>(
+pub fn canonicalize_and_dedup_g6<I>(
     g6_iter: I,
 ) -> Result<HashSet<String>, Box<dyn Error>>
 where

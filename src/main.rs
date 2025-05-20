@@ -1,5 +1,7 @@
 mod graphs;
+mod kneissler;
 use graphs::*;
+use kneissler::*;
 
 fn main() {
     // println!("Hello, world!");
@@ -32,7 +34,16 @@ fn main() {
     // }
 
     let start = std::time::Instant::now();
-    generate_graphs(12,1).unwrap();
+    //generate_graphs(12,1).unwrap();
+
+    for l in 12..13 {
+        compute_all_kneissler_graphs(l, 0);
+        // compute_all_kneissler_graphs(l, 1);
+        // compute_all_kneissler_graphs(l, 2);
+        // compute_all_kneissler_graphs(l, 3);
+    }
+    
+
     let duration = start.elapsed();
     println!("Time elapsed: {:?}", duration);
 
