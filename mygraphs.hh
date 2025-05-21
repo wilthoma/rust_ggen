@@ -12,24 +12,75 @@
 #include <set>
 #include <utility>
 
+#include <random>
+#include <cassert>
 
+using namespace std;
 
+template <typename T>
+int permutation_sign(const std::vector<T>& p) {
+    int sign = 1;
+    for (size_t i = 0; i < p.size(); ++i) {
+        for (size_t j = i + 1; j < p.size(); ++j) {
+            if (p[i] > p[j]) sign *= -1;
+        }
+    }
+    return sign;
+}
+
+template <typename T>
+vector<T> inverse_permutation(const std::vector<T>& p) {
+    vector<T> inv(p.size());
+    for (size_t i = 0; i < p.size(); ++i) {
+        inv[p[i]] = i;
+    }
+    return inv;
+}
+
+template <typename T>
+void print_perm(const std::vector<T>& p) {
+    for (size_t i = 0; i < p.size(); ++i) {
+        std::cout << (int)p[i] << " ";
+    }
+    std::cout << "\n";
+}
+
+struct Edge {
+    uint8_t u, v;
+    int data = 0;
+    Edge(uint8_t u_, uint8_t v_, int data_ = 0) : u(u_), v(v_), data(data_) {}
+    bool operator<(const Edge& other) const {
+        return std::tie(u, v) < std::tie(other.u, other.v);
+    }
+    bool operator==(const Edge& other) const {
+        return u == other.u && v == other.v && data == other.data;
+    }
+    friend bool operator>(const Edge& lhs, const Edge& rhs) {
+        return rhs < lhs;
+    }
+    friend bool operator<=(const Edge& lhs, const Edge& rhs) {
+        return !(rhs < lhs);
+    }
+    friend bool operator>=(const Edge& lhs, const Edge& rhs) {
+        return !(lhs < rhs);
+    }
+};
 
 class Graph {
 public:
     uint8_t num_vertices;
-    std::vector<std::pair<uint8_t, uint8_t>> edges;
+    std::vector<Edge> edges;
 
     Graph(uint8_t n) : num_vertices(n) {}
 
-    Graph(uint8_t n, const std::vector<std::pair<uint8_t, uint8_t>>& e)
+    Graph(uint8_t n, const std::vector<Edge>& e)
         : num_vertices(n), edges(e) {}
 
-    void add_edge(uint8_t u, uint8_t v) {
+    void add_edge(uint8_t u, uint8_t v, int data = 0) {
         if (u < v)
-            edges.emplace_back(u, v);
+            edges.emplace_back(u, v, data);
         else
-            edges.emplace_back(v, u);
+            edges.emplace_back(v, u, data);
     }
 
     std::string to_g6() const {
@@ -42,7 +93,7 @@ public:
             for (uint8_t i = 0; i < j; ++i) {
                 bool found = false;
                 for (const auto& e : edges) {
-                    if ((e.first == i && e.second == j) || (e.first == j && e.second == i)) {
+                    if ((e.u == i && e.v == j) || (e.u == j && e.v == i)) {
                         found = true;
                         break;
                     }
@@ -61,23 +112,83 @@ public:
         return result;
     }
 
+    string to_canon_g6() const {
+        // use bliss to get the canonical labeling of the graph and return its g6
+        bliss::Graph blissG = to_bliss_graph();
+        bliss::Stats stats;
+        const unsigned int* perm = blissG.canonical_form(stats);
+        std::vector<uint8_t> new_labels(num_vertices);
+        for (size_t i = 0; i < num_vertices; ++i) {
+            new_labels[i] = perm[i];
+        }
+        Graph canonG = Graph(num_vertices, edges);
+        canonG.relabel(new_labels);
+        return canonG.to_g6();
+    }
+
+    std::pair<string, int> to_canon_g6_sgn(bool even_edges) const {
+        // use bliss to get the canonical labeling of the graph and return its g6
+        bliss::Graph blissG = to_bliss_graph();
+        bliss::Stats stats;
+        const unsigned int* perm = blissG.canonical_form(stats);
+        std::vector<uint8_t> new_labels(num_vertices);
+        for (size_t i = 0; i < num_vertices; ++i) {
+            new_labels[i] = perm[i];
+        }
+        int sign = perm_sign(new_labels, even_edges);
+        Graph canonG = Graph(num_vertices, edges);
+        canonG.relabel(new_labels);
+        return {canonG.to_g6(), sign};
+    }
+
+    bool has_odd_automorphism(bool even_edges) const {
+        bliss::Graph blissG = to_bliss_graph();
+        bool ret = false;
+
+        //std::vector<std::vector<unsigned>> generators;
+        auto callback = [&](unsigned n, const unsigned* perm) {
+            vector<uint8_t> p(n);
+            for (size_t i = 0; i < n; ++i) {
+                p[i] = perm[i];
+            }
+            //p = inverse_permutation(p);
+            if (perm_sign(p, even_edges) != 1) {}
+                ret = true;
+                cout << "Permutation: ";
+                print_perm(p);
+            }
+            // ret = ret || (perm_sign(p, even_edges) != 1);
+            //generators.emplace_back(perm, perm + n);
+        };
+
+        bliss::Stats stats;
+        blissG.find_automorphisms(stats, callback);  // Modern Bliss: expects std::function
+
+        // for (const auto& perm : generators) {
+        //     for (auto x : perm) std::cout << x << " ";
+        //     std::cout << "\n";
+        // }
+        return ret;
+    }
+
+
     Graph add_edge_across(size_t e1idx, size_t e2idx) const {
         if (e1idx == e2idx) throw std::invalid_argument("Edges must be distinct");
         uint8_t new_n = num_vertices + 2;
         uint8_t v1 = num_vertices;
         uint8_t v2 = num_vertices + 1;
-        std::vector<std::pair<uint8_t, uint8_t>> new_edges;
+        std::vector<Edge> new_edges;
         for (size_t i = 0; i < edges.size(); ++i) {
-            auto [u, v] = edges[i];
+            auto [u, v, data] = edges[i];
             if (i == e1idx) {
-                new_edges.emplace_back(u, v1);
-                new_edges.emplace_back(v, v1);
-                new_edges.emplace_back(v1, v2);
+                new_edges.emplace_back(u, v1, data);
+                new_edges.emplace_back(v, v1, data);
+                new_edges.emplace_back(v1, v2, 0);
             } else if (i == e2idx) {
-                new_edges.emplace_back(u, v2);
-                new_edges.emplace_back(v, v2);
+                new_edges.emplace_back(u, v2, data);
+                new_edges.emplace_back(v, v2, data);
             } else {
-                new_edges.emplace_back(u, v);
+                new_edges.emplace_back(u, v, data);
             }
         }
         std::sort(new_edges.begin(), new_edges.end());
@@ -86,25 +197,25 @@ public:
 
     Graph replace_edge_by_tetra(size_t eidx) const {
         uint8_t new_n = num_vertices + 4;
-        auto [u, v] = edges[eidx];
+        auto [u, v, data] = edges[eidx];
         if (!(u < v)) throw std::invalid_argument("Edge must be (u < v)");
-        std::vector<std::pair<uint8_t, uint8_t>> new_edges;
+        std::vector<Edge> new_edges;
         for (size_t i = 0; i < edges.size(); ++i) {
-            auto [a, b] = edges[i];
+            auto [a, b, d] = edges[i];
             if (i == eidx) {
                 uint8_t v1 = new_n - 4;
                 uint8_t v2 = new_n - 3;
                 uint8_t v3 = new_n - 2;
                 uint8_t v4 = new_n - 1;
-                new_edges.emplace_back(u, v1);
-                new_edges.emplace_back(v1, v2);
-                new_edges.emplace_back(v1, v3);
-                new_edges.emplace_back(v2, v4);
-                new_edges.emplace_back(v3, v4);
-                new_edges.emplace_back(v2, v3);
-                new_edges.emplace_back(v, v4);
+                new_edges.emplace_back(u, v1, data);
+                new_edges.emplace_back(v1, v2, 0);
+                new_edges.emplace_back(v1, v3, 0);
+                new_edges.emplace_back(v2, v4, 0);
+                new_edges.emplace_back(v3, v4, 0);
+                new_edges.emplace_back(v2, v3, 0);
+                new_edges.emplace_back(v, v4, data);
             } else {
-                new_edges.emplace_back(a, b);
+                new_edges.emplace_back(a, b, d);
             }
         }
         std::sort(new_edges.begin(), new_edges.end());
@@ -113,9 +224,9 @@ public:
 
     Graph union_with(const Graph& other) const {
         uint8_t new_n = num_vertices + other.num_vertices;
-        std::vector<std::pair<uint8_t, uint8_t>> new_edges = edges;
+        std::vector<Edge> new_edges = edges;
         for (const auto& e : other.edges) {
-            new_edges.emplace_back(e.first + num_vertices, e.second + num_vertices);
+            new_edges.emplace_back(e.u + num_vertices, e.v + num_vertices, e.data);
         }
         return Graph(new_n, new_edges);
     }
@@ -123,23 +234,22 @@ public:
     Graph contract_edge(size_t eidx) const {
         if (num_vertices < 2) throw std::invalid_argument("Not enough vertices to contract");
         uint8_t new_n = num_vertices - 1;
-        auto [u, v] = edges[eidx];
+        auto [u, v, data] = edges[eidx];
         if (!(u < v)) throw std::invalid_argument("Edge must be (u < v)");
-        std::set<std::pair<uint8_t, uint8_t>> edge_set;
+        std::set<Edge> edge_set;
         for (size_t i = 0; i < edges.size(); ++i) {
             if (i == eidx) continue;
-            auto [a, b] = edges[i];
+            auto [a, b, d] = edges[i];
             uint8_t aa = (a < v) ? a : (a == v ? u : a - 1);
             uint8_t bb = (b < v) ? b : (b == v ? u : b - 1);
             if (aa < bb)
-                edge_set.emplace(aa, bb);
+                edge_set.emplace(aa, bb, d);
             else if (bb < aa)
-                edge_set.emplace(bb, aa);
+                edge_set.emplace(bb, aa, d);
         }
-        std::vector<std::pair<uint8_t, uint8_t>> new_edges(edge_set.begin(), edge_set.end());
+        std::vector<Edge> new_edges(edge_set.begin(), edge_set.end());
         return Graph(new_n, new_edges);
     }
-
 
     static Graph from_g6(const std::string& g6) {
         if (g6.empty()) throw std::invalid_argument("Empty g6 string");
@@ -159,12 +269,12 @@ public:
             }
         }
         bits.resize(num_bits);
-        std::vector<std::pair<uint8_t, uint8_t>> edges;
+        std::vector<Edge> edges;
         size_t k = 0;
         for (uint8_t j = 1; j < n; ++j) {
             for (uint8_t i = 0; i < j; ++i) {
                 if (bits[k++] == 1) {
-                    edges.emplace_back(i, j);
+                    edges.emplace_back(i, j, 0);
                 }
             }
         }
@@ -210,12 +320,12 @@ public:
     }
 
     static Graph tetrahedron_graph() {
-        return Graph(4, {{0,1},{0,2},{0,3},{1,2},{1,3},{2,3}});
+        return Graph(4, {Edge(0,1), Edge(0,2), Edge(0,3), Edge(1,2), Edge(1,3), Edge(2,3)});
     }
 
     static Graph tetrastring_graph(uint8_t n_blocks) {
         uint8_t n = 4 * n_blocks;
-        std::vector<std::pair<uint8_t, uint8_t>> edges;
+        std::vector<Edge> edges;
         for (uint8_t i = 0; i < n_blocks; ++i) {
             edges.emplace_back(4 * i, 4 * i + 1);
             edges.emplace_back(4 * i, 4 * i + 2);
@@ -234,13 +344,225 @@ public:
     void print() const {
         std::cout << "Graph with " << (int)num_vertices << " vertices and " << edges.size()
                   << " edges. G6 code: " << to_g6() << ".\n";
-        for (const auto& [u, v] : edges) {
-            std::cout << (int)u << " " << (int)v << "\n";
+        for (const auto& e : edges) {
+            std::cout << (int)e.u << " " << (int)e.v << " " << e.data << "\n";
         }
+    }
+
+    bliss::Graph to_bliss_graph() const {
+        bliss::Graph g(num_vertices);
+        for (const auto& e : edges) {
+            g.add_edge(e.u, e.v);
+        }
+        return g;
+    }
+
+    void relabel(const std::vector<uint8_t>& new_labels) {
+        if (new_labels.size() != num_vertices) throw std::invalid_argument("Invalid relabeling vector size");
+        for (auto& e : edges) {
+            e.u = new_labels[e.u];
+            e.v = new_labels[e.v];
+        }
+        sort_edges();
+    }
+
+    void sort_edges() {
+        std::sort(edges.begin(), edges.end());
+    }
+
+    void number_edges() { 
+        // sort edges and assign data the position in the ordered list
+        sort_edges();
+        for (size_t i = 0; i < edges.size(); ++i) {
+            edges[i].data = i;
+        }
+    }
+
+    int perm_sign(const std::vector<uint8_t>& p, bool even_edges) const {
+        if (even_edges) {
+            // Sign of the vertex permutation
+            int sign = permutation_sign(p);
+            // Multiply by sign flips from edge orientation
+            for (const auto& e : edges) {
+                uint8_t u = e.u, v = e.v;
+                if ((u < v && p[u] > p[v]) || (u > v && p[u] < p[v])) {
+                    sign *= -1;
+                }
+            }
+            return sign;
+        } else {
+            Graph G1 = Graph(num_vertices, edges);
+            G1.number_edges();
+            G1.relabel(p);
+            G1.sort_edges();
+            std::vector<int> perm;
+            for (const auto& e : G1.edges) {
+                perm.push_back(e.data);
+            }
+            int sign = permutation_sign(perm);
+            return sign;
+        }
+    }
+
+    // int contract_edge_with_sign(size_t eidx, bool even_edges) const {
+
+    // }
+
+    vector<pair<Graph, int>> get_contractions_with_sign(bool even_edges) const {
+        vector<pair<Graph, int>> image;
+        for (size_t i = 0; i < edges.size(); ++i) {
+            // Contract edge i
+            auto [u, v, data] = edges[i];
+            // Create permutation that brings u,v to 0,1
+            vector<uint8_t> pp(num_vertices);
+            iota(pp.begin(), pp.end(), 0);
+            if (u != 0) swap(pp[0], pp[u]);
+            if (v == 0) swap(pp[1], pp[u]);
+            else if (v != 1) swap(pp[1], pp[v]);
+            // Compute sign
+            int sgn = perm_sign(pp, even_edges);
+            // Relabel and contract
+            Graph G1 = *this;
+            G1.relabel(pp);
+            G1.number_edges();
+            size_t prev_size = G1.edges.size();
+            //try {
+            G1 = G1.contract_edge(0);
+            //} catch (...) {
+            //continue;
+            //}
+            if (prev_size - G1.edges.size() != 1) continue;
+            // Relabel to canonical order
+            // vector<uint8_t> relab(G1.num_vertices);
+            // iota(relab.begin(), relab.end(), 0);
+            // G1.relabel(relab);
+            if (!even_edges) {
+            // Compute sign from edge permutation
+            vector<int> p;
+            G1.sort_edges();
+            for (const auto& e : G1.edges) p.push_back(e.data-1); // the edge with label 1 was contracted
+            sgn *= permutation_sign(p);
+            } else {
+            sgn *= -1;
+            }
+            image.emplace_back(G1, sgn);
+        }
+        return image;
+        
+        // vector<pair<Graph, int>> contractions;
+        // for (size_t i = 0; i < edges.size(); ++i) {
+        //     Graph g = contract_edge(i);
+        //     int sign = g.perm_sign({0, 1, 2, 3}, even_edges);
+        //     contractions.emplace_back(g, sign);
+        // }
+        // return contractions;
+    }
+
+    bool check_valid(size_t defect, string err_msg) const {
+        // check whether all vertices are $\geq 3-valent
+        for (size_t i = 0; i < num_vertices; ++i) {
+            size_t degree = 0;
+            for (const auto& e : edges) {
+                if (e.u == i || e.v == i) degree++;
+            }
+            if (degree < 3) {
+                std::cerr << err_msg << " Graph " << to_g6() << " Vertex " << i << " has degree " << degree << "\n";
+                return false;
+            }
+        }
+        // there are no multiple edges or self-edges
+        for (auto [u,v,data] : edges) {
+            if (u == v) {
+                std::cerr << err_msg << " Graph " << to_g6() << " has self-edge " << (int) u << "\n";
+                return false;
+            }
+            if (u > v) {
+                std::cerr << err_msg << " Graph " << to_g6() << " has wrongly ordered edge " << (int) u << " " << (int) v << "\n";
+                return false;
+            }
+            int cnt = 0;
+            for (auto [u2,v2,data2] : edges) {
+                if (u == u2 && v == v2) {
+                    cnt++;
+                    if (cnt > 1){
+                        std::cerr << err_msg << " Graph " << to_g6() << " has multiple edges " << (int) u << " " << (int) v << "\n";
+                        return false;
+                    }
+                }
+            }
+        }
+        // check whether the graph is connected
+        std::vector<bool> visited(num_vertices, false);
+        std::vector<uint8_t> stack;
+        stack.push_back(0);
+        while (!stack.empty()) {
+            uint8_t v = stack.back();
+            stack.pop_back();
+            if (visited[v]) continue;
+            visited[v] = true;
+            for (const auto& e : edges) {
+                if (e.u == v && !visited[e.v]) {
+                    stack.push_back(e.v);
+                } else if (e.v == v && !visited[e.u]) {
+                    stack.push_back(e.u);
+                }
+            }
+        }
+        for (size_t i = 0; i < num_vertices; ++i) {
+            if (!visited[i]) {
+                std::cerr << err_msg << " Graph " << to_g6() << " is not connected\n";
+                return false;
+            }
+        }
+        // check if defect = 2edges -3vertices
+        if (defect +3*num_vertices != 2*edges.size()) {
+            int true_defect = 2*edges.size() - 3*num_vertices;
+            std::cerr << err_msg << " Graph " << to_g6() << " has defect " << true_defect << "(not "<<defect<< ")\n";
+            return false;
+        }
+        return true;
+    }
+
+    static bool check_g6_valid(string g6, size_t defect, string err_msg) {
+        Graph g = from_g6(g6);
+        return g.check_valid(defect, err_msg);
     }
 };
 
 
+
+
+inline bool graphs_equal(const Graph& g1, const Graph& g2) {
+    if (g1.num_vertices != g2.num_vertices) {
+        return false;
+    }
+    auto e1 = g1.edges;
+    auto e2 = g2.edges;
+    std::sort(e1.begin(), e1.end());
+    std::sort(e2.begin(), e2.end());
+    return e1 == e2;
+}
+
+
+inline void test_random_graphs_g6_roundtrip() {
+    std::mt19937 rng(std::random_device{}());
+    for (int t = 0; t < 10; ++t) {
+        uint8_t n = std::uniform_int_distribution<uint8_t>(1, 20)(rng);
+        Graph g(n);
+        for (uint8_t u = 0; u < n; ++u) {
+            for (uint8_t v = u + 1; v < n; ++v) {
+                if (std::bernoulli_distribution(0.5)(rng)) {
+                    g.add_edge(u, v);
+                }
+            }
+        }
+        std::string g6 = g.to_g6();
+        Graph g2 = Graph::from_g6(g6);
+        std::string g6_2 = g2.to_g6();
+        assert(g6 == g6_2 && "G6 roundtrip failed");
+        assert(graphs_equal(g, g2) && "Graph roundtrip failed");
+    }
+}
 
 
 

@@ -341,7 +341,7 @@ impl Graph {
     //     }
     //     Graph { num_vertices, edges }
     // }
-    
+
 pub fn create_geng_ref(l: usize, d : usize) {
     let n = 2 * l - 2 - d;
     let e = 3*l-3- d;
@@ -663,20 +663,6 @@ mod tests {
         e1 == e2
     }
 
-    
-
-    #[test]
-    fn test_filecompare() {
-        compare_file_to_ref(3, 0);
-        compare_file_to_ref(4, 0);
-        compare_file_to_ref(5, 0);
-        compare_file_to_ref(6, 0);
-        compare_file_to_ref(7, 0);
-        compare_file_to_ref(8, 0);
-        compare_file_to_ref(9, 0);
-        compare_file_to_ref(10, 0);
-    }
-
     #[test]
     fn test_random_graphs_g6_roundtrip() {
         let mut rng = rand::rng();
@@ -708,6 +694,19 @@ mod tests {
                 g2.edges
             );
         }
+    }
+
+
+    #[test]
+    fn test_filecompare() {
+        compare_file_to_ref(3, 0);
+        compare_file_to_ref(4, 0);
+        compare_file_to_ref(5, 0);
+        compare_file_to_ref(6, 0);
+        compare_file_to_ref(7, 0);
+        compare_file_to_ref(8, 0);
+        compare_file_to_ref(9, 0);
+        compare_file_to_ref(10, 0);
     }
 
     #[test]
