@@ -454,7 +454,7 @@ void test_basis_vs_ref(KneisslerGVS V) {
         ref_g6s[i] = g1s;
         // sanity checks
         if (g.has_odd_automorphism(V.even_edges)) {
-            cout << "Reference graph has odd automorphism: " << g1s << endl;
+            cout << "Reference graph has odd automorphism: " << g.to_g6() << endl;
         }
 
     }

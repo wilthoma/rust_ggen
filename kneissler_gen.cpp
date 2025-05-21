@@ -20,7 +20,7 @@ int main() {
     // Example usage
 
     for (int l =6; l < 7; ++l) {
-        for (int k = 0; k < 1; ++k) {
+        for (int k = 0; k < 4; ++k) {
             for (bool even_edges : {false}) {
             // for (bool even_edges : {true, false}) {
                 KneisslerGVS gvs(l, k, even_edges);

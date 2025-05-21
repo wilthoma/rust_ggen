@@ -142,6 +142,7 @@ public:
     }
 
     bool has_odd_automorphism(bool even_edges) const {
+        // cout << "bliss0 "<< to_g6() << endl;
         bliss::Graph blissG = to_bliss_graph();
         bool ret = false;
 
@@ -154,13 +155,13 @@ public:
             //p = inverse_permutation(p);
             if (perm_sign(p, even_edges) != 1) {
                 ret = true;
-                cout << "Permutation: ";
-                print_perm(p);
+                // cout << "Permutation: ";
+                // print_perm(p);
             }
             // ret = ret || (perm_sign(p, even_edges) != 1);
             //generators.emplace_back(perm, perm + n);
         };
-
+        // cout << "bliss "<< to_g6() << endl;
         bliss::Stats stats;
         blissG.find_automorphisms(stats, callback);  // Modern Bliss: expects std::function
 
@@ -362,6 +363,10 @@ public:
         for (auto& e : edges) {
             e.u = new_labels[e.u];
             e.v = new_labels[e.v];
+            // swap u and v if u > v
+            if (e.u > e.v) {
+                std::swap(e.u, e.v);
+            }
         }
         sort_edges();
     }
@@ -393,6 +398,7 @@ public:
         } else {
             Graph G1 = Graph(num_vertices, edges);
             G1.number_edges();
+            // Graph G2(G1.num_vertices, G1.edges);
             G1.relabel(p);
             G1.sort_edges();
             std::vector<int> perm;
@@ -400,10 +406,24 @@ public:
                 perm.push_back(e.data);
             }
             int sign = permutation_sign(perm);
+            // if (sign !=1) {
+            //     cout << "Permutation (perm_sign): ";
+            //     print_perm(perm);
+            //     cout << "graph: " << G1.to_g6() << endl;
+            //     G1.print_edges();
+            //     cout << "graph: " << G2.to_g6() << endl;
+            //     G2.print_edges();
+
+            // }
             return sign;
         }
     }
 
+    void print_edges() {
+        for (const auto& e : edges) {
+            std::cout << (int)e.u << " " << (int)e.v << " " << (int)e.data << "\n";
+        }
+    }
     // int contract_edge_with_sign(size_t eidx, bool even_edges) const {
 
     // }
