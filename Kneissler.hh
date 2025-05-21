@@ -228,6 +228,26 @@ void save_matrix_to_sms_file(const map<pair<size_t, size_t>, int>& matrix, int n
     file.close();
 }
 
+map<pair<size_t, size_t>, int> load_matrix_from_sms_file(const string& filename) {
+    ifstream file(filename);
+    if (!file) throw std::runtime_error("Failed to open file for reading");
+    map<pair<size_t, size_t>, int> matrix;
+    int nrows, ncols;
+    string dummy;
+    file >> nrows >> ncols >> dummy;
+    // read until 0 0 0
+    while (true) {
+        size_t row, col;
+        int val;
+        file >> row >> col >> val;
+        if (row == 0 && col == 0 && val == 0) break;
+        // sms file uses 1-based indexing
+        matrix[{row - 1, col - 1}] = val;
+    }
+    file.close();
+    return matrix;
+}
+
 string get_type_string(bool even_edges) {
     return even_edges ? "even_edges" : "odd_edges";
 }
@@ -256,6 +276,12 @@ class KneisslerGVS  {
             return "data/kneissler/" + get_type_string(even_edges) +
                    "/gra" + std::to_string(num_loops) +
                    "_" + std::to_string(kn_type) + ".g6";
+        }
+
+        string get_ref_basis_file_path() {
+            return "data/kneissler/ref/" + get_type_string(even_edges) +
+                        "/gra" + std::to_string(num_loops) +
+                        "_" + std::to_string(kn_type) + ".g6";
         }
 
         vector<string> get_basis_g6() {
@@ -356,6 +382,15 @@ class KneisslerGVS  {
             return "KneisslerGVS(" + std::to_string(num_loops) + ", " +
                    std::to_string(kn_type) + ", " + get_type_string(even_edges) + ")";
         }
+
+        map<string, size_t> get_basis_dict() {
+            vector<string> g6s = get_basis_g6();
+            map<string, size_t> g6s_map;
+            for (size_t i = 0; i < g6s.size(); ++i) {
+                g6s_map[g6s[i]] = i;
+            }
+            return g6s_map;
+        }
 };
 
 class KneisslerContract {
@@ -382,6 +417,12 @@ class KneisslerContract {
         return "data/kneissler/" + get_type_string(even_edges) +
                "/contractD" + std::to_string(num_loops) +
                "_" + std::to_string(kn_type) + ".txt";
+    }
+
+    string get_ref_matrix_file_path() {
+        return "data/kneissler/ref/" + get_type_string(even_edges) +
+                   "/contractD" + std::to_string(num_loops) +
+                   "_" + std::to_string(kn_type) + ".txt";
     }
 
     void build_matrix(bool ignore_existing_files = false) {
@@ -433,8 +474,16 @@ class KneisslerContract {
         cout << "Matrix saved to " << fname << endl;
     }
 
+    string to_string() const {
+        return "KneisslerContract(" + std::to_string(num_loops) + ", " +
+               std::to_string(kn_type) + ", " + get_type_string(even_edges) + ")";
+    }
+
+
 
 };
+
+
 
 
 void test_basis_vs_ref(KneisslerGVS V) {
@@ -489,6 +538,124 @@ void test_basis_vs_ref(KneisslerGVS V) {
     } else {
         cout << "All graphs in the reference are in the basis" << endl;
     }
+}
+
+
+
+void test_matrix_vs_ref(KneisslerContract D) {
+    // test if the matrix is correct
+    cout << "Checking matrix correctness "<< D.to_string() << "..." << endl;  
+    string ref_fname = "data/kneissler/ref/" + get_type_string(D.even_edges) +
+                   "/contractD" + std::to_string(D.num_loops) +
+                   "_" + std::to_string(D.kn_type) + ".txt";
+    cout << "Reference file: " << ref_fname << endl;
+    map<pair<size_t, size_t>, int> ref_matrix;
+    ifstream file(ref_fname);
+    if (!file) throw std::runtime_error("Failed to open file for reading");
+    int nrows, ncols, num_entries;
+    file >> nrows >> ncols >> num_entries;
+    for (int i = 0; i < num_entries; ++i) {
+        size_t row, col;
+        int val;
+        file >> row >> col >> val;
+        ref_matrix[{row - 1, col - 1}] = val;
+    }
+    file.close();
+    // load matrix from file
+    string fname = D.get_matrix_file_path();
+    map<pair<size_t, size_t>, int> matrix;
+    ifstream file2(fname);
+    if (!file2) throw std::runtime_error("Failed to open file for reading");
+    int nrows2, ncols2, num_entries2;
+    file2 >> nrows2 >> ncols2 >> num_entries2;
+    for (int i = 0; i < num_entries2; ++i) {
+        size_t row, col;
+        int val;
+        file2 >> row >> col >> val;
+        matrix[{row - 1, col - 1}] = val;
+    }
+    file2.close();
+
+    // before comparing entries, we have to account for possibly different basis orderings.
+    // load the domain and tagert basis and the reference basis. canonize the reference basis and find the permutation
+    // then correct the matrix indices (rows and columns) accorind to the row- and column permutations
+    // get the domain and target basis
+    vector<string> in_basis = D.domain.get_basis_g6();
+    vector<string> out_basis = D.target.get_basis_g6();
+    map<string, size_t> in_basis_map = D.domain.get_basis_dict();
+    map<string, size_t> out_basis_map = D.target.get_basis_dict();
+    // get the reference basis
+    vector<string> in_basis_ref = Graph::load_from_file(D.domain.get_ref_basis_file_path());
+    vector<string> out_basis_ref = Graph::load_from_file(D.target.get_ref_basis_file_path());
+
+    // canonize the reference basis
+    for (size_t i = 0; i < in_basis_ref.size(); ++i) {
+        Graph g = Graph::from_g6(in_basis_ref[i]);
+        auto g1s = g.to_canon_g6();
+        in_basis_ref[i] = g1s;
+        // sanity checks
+        if (g.has_odd_automorphism(D.even_edges)) {
+            cout << "Reference graph has odd automorphism: " << g.to_g6() << endl;
+        }
+    }
+    for (size_t i = 0; i < out_basis_ref.size(); ++i) {
+        Graph g = Graph::from_g6(out_basis_ref[i]);
+        auto g1s = g.to_canon_g6();
+        out_basis_ref[i] = g1s;
+        // sanity checks
+        if (g.has_odd_automorphism(D.even_edges)) {
+            cout << "Reference graph has odd automorphism: " << g.to_g6() << endl;
+        }
+    }
+    // compute ref to normal basis permutations
+    vector<size_t> in_perm(in_basis_ref.size());
+    vector<size_t> out_perm(out_basis_ref.size());
+    for (size_t i = 0; i < in_basis_ref.size(); ++i) {
+        auto it = in_basis_map.find(in_basis_ref[i]);
+        if (it != in_basis_map.end()) {
+            in_perm[i] = it->second;
+        } else {
+            cout << "Error: " << in_basis_ref[i] << " not found in domain basis" << endl;
+        }
+    }
+    for (size_t i = 0; i < out_basis_ref.size(); ++i) {
+        auto it = out_basis_map.find(out_basis_ref[i]);
+        if (it != out_basis_map.end()) {
+            out_perm[i] = it->second;
+        } else {
+            cout << "Error: " << out_basis_ref[i] << " not found in target basis" << endl;
+        }
+    }
+    // now we have the permutations, we can correct the matrix indices
+    map<pair<size_t, size_t>, int> matrix2;
+    for (const auto& [key, value] : matrix) {
+        size_t row = key.first;
+        size_t col = key.second;
+        // apply the permutations
+        row = in_perm[row];
+        col = out_perm[col];
+        matrix2[{row, col}] = value;
+    }
+    // now we can compare the matrices
+    // check if the number of rows and columns are the same
+    if (nrows != nrows2 || ncols != ncols2) {
+        cout << "Matrix dimensions are different: " << nrows << "x" << ncols << " vs " << nrows2 << "x" << ncols2 << endl;
+        return;
+    }
+    // check if the number of entries are the same
+    if (num_entries != num_entries2) {
+        cout << "Matrix number of entries are different: " << num_entries << " vs " << num_entries2 << endl;
+        return;
+    }
+    // check whether the entries are the same
+    for (const auto& [key, value] : matrix2) {
+        if (ref_matrix.find(key) == ref_matrix.end()) {
+            cout << "Entry " << key.first << " " << key.second << " not found in reference matrix" << endl;
+        } else if (ref_matrix[key] != value) {
+            cout << "Entry " << key.first << " " << key.second << " differs: " << ref_matrix[key] << " vs " << value << endl;
+        }
+    }
+
 }
 
 
