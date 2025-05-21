@@ -41,43 +41,6 @@ impl Graph {
         }
     }
 
-    // pub fn to_g6(&self) -> String {
-    //     // Create an adjacency matrix
-    //     let n = self.num_vertices as usize;
-    //     let mut adj = vec![vec![false; n]; n];
-    //     for (u, v) in &self.edges {
-    //         adj[*u as usize][*v as usize] = true;
-    //         adj[*v as usize][*u as usize] = true;
-    //     }
-    //     // Manually build the bit vector for G6Graph
-    //     let mut bit_vec = Vec::new();
-    //     for i in 0..n {
-    //         for j in (i + 1)..n {
-    //             bit_vec.push(adj[i][j] as u8);
-    //         }
-    //     }
-    //     let g6 = G6Graph {
-    //         n: n,
-    //         bit_vec,
-    //     };
-    //     g6.to_g6()
-    // }
-
-    pub fn from_g6_ref(g6_str: &str) -> Self {
-        let g6 = G6Graph::from_g6(g6_str).unwrap();
-        let num_vertices = g6.n as u8;
-        let bit_vec = g6.bit_vec;
-        let mut edges = Vec::new();
-        for i in 0..num_vertices{
-            for j in 0..num_vertices{
-                if i<j && bit_vec[  (i as usize)*g6.n+(j as usize)]>0 {
-                    edges.push((i, j));
-                }
-            }
-        }
-        Graph { num_vertices, edges }
-    }
-
     pub fn to_g6(&self) -> String {
         let graph = self;
         let n = graph.num_vertices;
@@ -363,6 +326,22 @@ impl Graph {
     }
 }
 
+
+// pub fn from_g6_ref(g6_str: &str) -> Self {
+    //     let g6 = G6Graph::from_g6(g6_str).unwrap();
+    //     let num_vertices = g6.n as u8;
+    //     let bit_vec = g6.bit_vec;
+    //     let mut edges = Vec::new();
+    //     for i in 0..num_vertices{
+    //         for j in 0..num_vertices{
+    //             if i<j && bit_vec[  (i as usize)*g6.n+(j as usize)]>0 {
+    //                 edges.push((i, j));
+    //             }
+    //         }
+    //     }
+    //     Graph { num_vertices, edges }
+    // }
+    
 pub fn create_geng_ref(l: usize, d : usize) {
     let n = 2 * l - 2 - d;
     let e = 3*l-3- d;

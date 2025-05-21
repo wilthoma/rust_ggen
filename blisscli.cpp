@@ -3,6 +3,7 @@
 #include <utility>
 #include <functional>
 #include "bliss/graph.hh"
+#include "mygraphs.hh"
 
 int main() {
     int n;
