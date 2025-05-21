@@ -152,7 +152,7 @@ public:
                 p[i] = perm[i];
             }
             //p = inverse_permutation(p);
-            if (perm_sign(p, even_edges) != 1) {}
+            if (perm_sign(p, even_edges) != 1) {
                 ret = true;
                 cout << "Permutation: ";
                 print_perm(p);
