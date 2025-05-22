@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++17 -O2 -I./bliss -MMD -MP
+CXXFLAGS = -std=c++17 -O3 -I./bliss -MMD -MP
 LDFLAGS = -L. -lbliss_static
 
 TARGET = kneissler_gen
