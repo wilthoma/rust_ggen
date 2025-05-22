@@ -18,7 +18,7 @@ void toc() {
 
 int main() {
     // Example usage
-    for (int l =12; l < 15; ++l) {
+    for (int l =10; l < 15; ++l) {
         for (int k = 0; k < 4; ++k) {
             // for (bool even_edges : {true}) {
             for (bool even_edges : {true, false}) {
