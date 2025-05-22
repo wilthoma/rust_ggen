@@ -46,10 +46,10 @@ int main(int argc, char** argv) {
 
     app.add_option("range_loops", r_loops, "Range in format start:end")->required();
     app.add_option("range_types", r_types, "Range in format start:end")->required();
-    app.add_option("-m,--compute-matrices", compute_matrices, "Compute matrices");
-    app.add_option("-b,--compute-bases", compute_bases, "Compute bases");
-    app.add_option("-e,--even-edges", even_edges, "Use even edges");
-    app.add_option("-o,--overwrite", overwrite, "Overwrite existing files");
+    app.add_flag("-m,--compute-matrices", compute_matrices, "Compute matrices");
+    app.add_flag("-b,--compute-bases", compute_bases, "Compute bases");
+    app.add_flag("-e,--even-edges", even_edges, "Use even edges");
+    app.add_flag("-o,--overwrite", overwrite, "Overwrite existing files");
 
 
     CLI11_PARSE(app, argc, argv);
