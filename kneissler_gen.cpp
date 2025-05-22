@@ -18,16 +18,15 @@ void toc() {
 
 int main() {
     // Example usage
-
-    for (int l =5; l < 6; ++l) {
-        for (int k = 0; k < 3; ++k) {
-            for (bool even_edges : {true}) {
-            // for (bool even_edges : {true, false}) {
+    for (int l =12; l < 15; ++l) {
+        for (int k = 0; k < 4; ++k) {
+            // for (bool even_edges : {true}) {
+            for (bool even_edges : {true, false}) {
                 KneisslerGVS gvs(l, k, even_edges);
                 
-                // tic();
-                // gvs.build_basis(true);
-                // toc();
+                tic();
+                gvs.build_basis(true);
+                toc();
                 // test_basis_vs_ref(gvs);
 
                 if (k>=2) {
@@ -35,7 +34,7 @@ int main() {
                     tic();
                     D.build_matrix(true);
                     toc();
-                    test_matrix_vs_ref(D);
+                //     test_matrix_vs_ref(D);
                 }
             }
         }

@@ -45,6 +45,20 @@ void print_perm(const std::vector<T>& p) {
     std::cout << "\n";
 }
 
+// Permute the pair (u, v) to the left of the vertex_range and return the induced permutation (inverse)
+inline std::vector<uint8_t> permute_to_left(uint8_t u, uint8_t v, size_t n) {
+    std::vector<uint8_t> p(n);
+    p[0] = u;
+    p[1] = v;
+    size_t idx = 2;
+    for (uint8_t j = 0; j < n; ++j) {
+        if (j == u || j == v) continue;
+        p[idx++] = j;
+    }
+    // Return the inverse permutation
+    return inverse_permutation(p);
+}
+
 struct Edge {
     uint8_t u, v;
     int data = 0;
@@ -439,6 +453,8 @@ public:
             if (u != 0) swap(pp[0], pp[u]);
             if (v == 0) swap(pp[1], pp[u]);
             else if (v != 1) swap(pp[1], pp[v]);
+
+            pp = permute_to_left(u, v, num_vertices);
             // Compute sign
             int sgn = perm_sign(pp, even_edges);
             // Relabel and contract
@@ -457,13 +473,13 @@ public:
             // iota(relab.begin(), relab.end(), 0);
             // G1.relabel(relab);
             if (!even_edges) {
-            // Compute sign from edge permutation
-            vector<int> p;
-            G1.sort_edges();
-            for (const auto& e : G1.edges) p.push_back(e.data-1); // the edge with label 1 was contracted
-            sgn *= permutation_sign(p);
+                // Compute sign from edge permutation
+                vector<int> p;
+                G1.sort_edges();
+                for (const auto& e : G1.edges) p.push_back(e.data-1); // the edge with label 1 was contracted
+                sgn *= permutation_sign(p);
             } else {
-            sgn *= -1;
+                sgn *= -1;
             }
             image.emplace_back(G1, sgn);
         }
@@ -479,6 +495,13 @@ public:
     }
 
     bool check_valid(size_t defect, string err_msg) const {
+        // check whether all vertex indices are < num_vertices
+        for (const auto& e : edges) {
+            if (e.u >= num_vertices || e.v >= num_vertices) {
+                std::cerr << err_msg << " Graph " << to_g6() << " has vertex index >= num_vertices\n";
+                return false;
+            }
+        }
         // check whether all vertices are $\geq 3-valent
         for (size_t i = 0; i < num_vertices; ++i) {
             size_t degree = 0;

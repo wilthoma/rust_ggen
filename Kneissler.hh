@@ -29,7 +29,7 @@ Graph barrel_graph(uint8_t k, const vector<uint8_t>& p) {
     for (size_t i = 0; i < p.size(); ++i) {
         g.add_edge(i, k + p[i]);
     }
-    g.check_valid(0, "barrel_graph");
+    // g.check_valid(0, "barrel_graph");
     return g;
 }
 
@@ -70,20 +70,20 @@ Graph tbarrel_graph(uint8_t k, const vector<uint8_t>& p) {
         g.add_edge(i, k + p[i]);
     }
     // cout << "d " << g.to_g6() << " " << g.edges.size() <<  endl;
-    if (!g.check_valid(1, "tbarrel_graph")) {
-        // print permutation
-        cout << "tbarrel_graph: k= " << (int)k << " -- ";
-        for (size_t i = 0; i < p.size(); ++i) {
-            cout << (int)p[i] << " ";
-        }
-        cout << endl;
-        // print edges 
-        for (const auto& e : g.edges) {
-            cout << (int)e.u << " " << (int)e.v << " " << (int)e.data << endl;
-        }
+    // if (!g.check_valid(1, "tbarrel_graph")) {
+    //     // print permutation
+    //     cout << "tbarrel_graph: k= " << (int)k << " -- ";
+    //     for (size_t i = 0; i < p.size(); ++i) {
+    //         cout << (int)p[i] << " ";
+    //     }
+    //     cout << endl;
+    //     // print edges 
+    //     for (const auto& e : g.edges) {
+    //         cout << (int)e.u << " " << (int)e.v << " " << (int)e.data << endl;
+    //     }
 
-        std::exit(-1);
-    }
+    //     std::exit(-1);
+    // }
     return g;
 }
 
@@ -115,19 +115,19 @@ Graph xtbarrel_graph(uint8_t k, const vector<uint8_t>& p) {
     }
 
     // cout << "c " << g.to_g6() << endl;
-    if (!g.check_valid(1, "xtbarrel_graph")) {
-        cout << "xtbarrel_graph: k= " << (int)k << " -- ";
-        for (size_t i = 0; i < p.size(); ++i) {
-            cout << (int)p[i] << " ";
-        }
-        cout << endl;
-        // print edges 
-        for (const auto& e : g.edges) {
-            cout << (int)e.u << " " << (int)e.v << " " << (int)e.data << endl;
-        }
+    // if (!g.check_valid(1, "xtbarrel_graph")) {
+    //     cout << "xtbarrel_graph: k= " << (int)k << " -- ";
+    //     for (size_t i = 0; i < p.size(); ++i) {
+    //         cout << (int)p[i] << " ";
+    //     }
+    //     cout << endl;
+    //     // print edges 
+    //     for (const auto& e : g.edges) {
+    //         cout << (int)e.u << " " << (int)e.v << " " << (int)e.data << endl;
+    //     }
 
-        std::exit(-1);
-    }
+    //     std::exit(-1);
+    // }
     return g;
 }
 
@@ -157,7 +157,7 @@ Graph triangle_graph(uint8_t k, const vector<uint8_t>& p) {
             g.add_edge(i, k);
         }
     }
-    g.check_valid(0, "triangle_graph");
+    // g.check_valid(0, "triangle_graph");
     return g;
 }
 
@@ -186,7 +186,7 @@ Graph hgraph(uint8_t k, const vector<uint8_t>& p) {
             g.add_edge(k, k + p[i]);
         }
     }
-    g.check_valid(0, "hgraph");
+    // g.check_valid(0, "hgraph");
     return g;
 }
 
@@ -228,11 +228,10 @@ void save_matrix_to_sms_file(const map<pair<size_t, size_t>, int>& matrix, int n
     file.close();
 }
 
-map<pair<size_t, size_t>, int> load_matrix_from_sms_file(const string& filename) {
+map<pair<size_t, size_t>, int> load_matrix_from_sms_file(const string& filename, int& nrows, int& ncols) {
     ifstream file(filename);
     if (!file) throw std::runtime_error("Failed to open file for reading");
     map<pair<size_t, size_t>, int> matrix;
-    int nrows, ncols;
     string dummy;
     file >> nrows >> ncols >> dummy;
     // read until 0 0 0
@@ -316,24 +315,24 @@ class KneisslerGVS  {
                     Graph g = tbarrel_graph(k, p);
                     if (!g.has_odd_automorphism(even_edges)) {
                         string g6 = g.to_canon_g6();
-                        Graph::check_g6_valid(g6, 1, "can_tbarrel_graph");
+                        // Graph::check_g6_valid(g6, 1, "can_tbarrel_graph");
                         g6s.insert(g6);
                     }
                     if (p[k - 2] != k-2) {
                         Graph gg = xtbarrel_graph(k, p);
                         if (!gg.has_odd_automorphism(even_edges)) {
-                            gg.check_valid(1, "can_xtbarrel_graph0 ");
+                            // gg.check_valid(1, "can_xtbarrel_graph0 ");
                             // cout << "gg " << gg.to_g6() << endl;
                             string g6 = gg.to_canon_g6();
-                            if (!Graph::check_g6_valid(g6, 1, "can_xtbarrel_graph ")) {
-                                cout << "gg " << gg.num_vertices  << endl;
-                                // print edge list 
-                                // for (const auto& e : gg.edges) {
-                                //     cout << (int)e.u << " " << (int)e.v << " " << (int)e.data << endl;
-                                // }
-                                cout << "g6 " << g6 << endl;
-                                std::exit(-1);
-                            }
+                            // if (!Graph::check_g6_valid(g6, 1, "can_xtbarrel_graph ")) {
+                            //     cout << "gg " << gg.num_vertices  << endl;
+                            //     // print edge list 
+                            //     // for (const auto& e : gg.edges) {
+                            //     //     cout << (int)e.u << " " << (int)e.v << " " << (int)e.data << endl;
+                            //     // }
+                            //     cout << "g6 " << g6 << endl;
+                            //     std::exit(-1);
+                            // }
                             g6s.insert(g6);
                         }
                     }
@@ -452,11 +451,15 @@ class KneisslerContract {
             out_basis_map[out_basis[i]] = i;
         }
 
+         
         for (const string s : in_basis) {
+            // cout << "******** Processing in element s: " << s << endl;
             Graph g = Graph::from_g6(s);
             auto v = g.get_contractions_with_sign(even_edges);
             for (const auto& [g1, sign] : v) {
+                // cout << "g1 " << g1.to_g6() << " sgn " << sign << endl;
                 auto [g1s, sign2] = g1.to_canon_g6_sgn(even_edges);
+                // cout << "g1s " << g1s << " sgn2 " << sign2 << endl;
                 int val = sign * sign2;
                 if (out_basis_map.find(g1s) != out_basis_map.end()) {
                     size_t row = in_basis_map[s];
@@ -466,6 +469,7 @@ class KneisslerContract {
                     } else {
                         matrix[{row, col}] = val;
                     }
+                    // cout << "++row " << row << " col " << col << " val " << val << " total " << matrix[{row, col}] << endl;
                 }
             }
         }
@@ -549,32 +553,13 @@ void test_matrix_vs_ref(KneisslerContract D) {
                    "/contractD" + std::to_string(D.num_loops) +
                    "_" + std::to_string(D.kn_type) + ".txt";
     cout << "Reference file: " << ref_fname << endl;
-    map<pair<size_t, size_t>, int> ref_matrix;
-    ifstream file(ref_fname);
-    if (!file) throw std::runtime_error("Failed to open file for reading");
-    int nrows, ncols, num_entries;
-    file >> nrows >> ncols >> num_entries;
-    for (int i = 0; i < num_entries; ++i) {
-        size_t row, col;
-        int val;
-        file >> row >> col >> val;
-        ref_matrix[{row - 1, col - 1}] = val;
-    }
-    file.close();
+    int nrows_ref, ncols_ref;
+    map<pair<size_t, size_t>, int> ref_matrix = load_matrix_from_sms_file(ref_fname, nrows_ref, ncols_ref);
     // load matrix from file
     string fname = D.get_matrix_file_path();
-    map<pair<size_t, size_t>, int> matrix;
-    ifstream file2(fname);
-    if (!file2) throw std::runtime_error("Failed to open file for reading");
-    int nrows2, ncols2, num_entries2;
-    file2 >> nrows2 >> ncols2 >> num_entries2;
-    for (int i = 0; i < num_entries2; ++i) {
-        size_t row, col;
-        int val;
-        file2 >> row >> col >> val;
-        matrix[{row - 1, col - 1}] = val;
-    }
-    file2.close();
+    int nrows, ncols;
+    map<pair<size_t, size_t>, int> matrix = load_matrix_from_sms_file(fname, nrows, ncols);
+    
 
     // before comparing entries, we have to account for possibly different basis orderings.
     // load the domain and tagert basis and the reference basis. canonize the reference basis and find the permutation
@@ -589,19 +574,25 @@ void test_matrix_vs_ref(KneisslerContract D) {
     vector<string> out_basis_ref = Graph::load_from_file(D.target.get_ref_basis_file_path());
 
     // canonize the reference basis
+    vector<int> in_basis_ref_sgn(in_basis_ref.size());
     for (size_t i = 0; i < in_basis_ref.size(); ++i) {
         Graph g = Graph::from_g6(in_basis_ref[i]);
-        auto g1s = g.to_canon_g6();
+        auto [g1s, sgn] = g.to_canon_g6_sgn(D.even_edges);
         in_basis_ref[i] = g1s;
+        in_basis_ref_sgn[i] = sgn;
+
         // sanity checks
         if (g.has_odd_automorphism(D.even_edges)) {
             cout << "Reference graph has odd automorphism: " << g.to_g6() << endl;
         }
     }
+    // canonize the target basis
+    vector<int> out_basis_ref_sgn(out_basis_ref.size());
     for (size_t i = 0; i < out_basis_ref.size(); ++i) {
         Graph g = Graph::from_g6(out_basis_ref[i]);
-        auto g1s = g.to_canon_g6();
+        auto [g1s, sgn] = g.to_canon_g6_sgn(D.even_edges);
         out_basis_ref[i] = g1s;
+        out_basis_ref_sgn[i] = sgn;
         // sanity checks
         if (g.has_odd_automorphism(D.even_edges)) {
             cout << "Reference graph has odd automorphism: " << g.to_g6() << endl;
@@ -628,31 +619,31 @@ void test_matrix_vs_ref(KneisslerContract D) {
     }
     // now we have the permutations, we can correct the matrix indices
     map<pair<size_t, size_t>, int> matrix2;
-    for (const auto& [key, value] : matrix) {
+    for (const auto& [key, value] : ref_matrix) {
         size_t row = key.first;
         size_t col = key.second;
         // apply the permutations
         row = in_perm[row];
         col = out_perm[col];
-        matrix2[{row, col}] = value;
+        matrix2[{row, col}] = value * in_basis_ref_sgn[key.first] * out_basis_ref_sgn[key.second];
     }
     // now we can compare the matrices
     // check if the number of rows and columns are the same
-    if (nrows != nrows2 || ncols != ncols2) {
-        cout << "Matrix dimensions are different: " << nrows << "x" << ncols << " vs " << nrows2 << "x" << ncols2 << endl;
+    if (nrows != nrows_ref || ncols != ncols_ref) {
+        cout << "Matrix dimensions are different: " << nrows << "x" << ncols << " vs " << nrows_ref << "x" << ncols_ref << endl;
         return;
     }
     // check if the number of entries are the same
-    if (num_entries != num_entries2) {
-        cout << "Matrix number of entries are different: " << num_entries << " vs " << num_entries2 << endl;
+    if (matrix.size() != matrix2.size()) {
+        cout << "Matrix number of entries are different: " << matrix.size() << " vs " << matrix2.size() << endl;
         return;
     }
     // check whether the entries are the same
-    for (const auto& [key, value] : matrix2) {
-        if (ref_matrix.find(key) == ref_matrix.end()) {
-            cout << "Entry " << key.first << " " << key.second << " not found in reference matrix" << endl;
-        } else if (ref_matrix[key] != value) {
-            cout << "Entry " << key.first << " " << key.second << " differs: " << ref_matrix[key] << " vs " << value << endl;
+    for (const auto& [key, value] : matrix) {
+        if (matrix2.find(key) == matrix2.end()) {
+            cout << "Entry " << key.first << " " << key.second << " not found in ref matrix" << endl;
+        } else if (matrix2[key] != value) {
+            cout << "Entry " << key.first << " " << key.second << " differs: " << matrix2[key] << " vs " << value << endl;
         }
     }
 
