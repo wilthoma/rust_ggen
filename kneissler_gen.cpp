@@ -39,31 +39,51 @@ int main(int argc, char** argv) {
 
     Range r_loops;
     Range r_types;
+    bool compute_matrices = false;
+    bool compute_bases = false;
+    bool even_edges = false;
+    bool overwrite = false;
+
     app.add_option("range_loops", r_loops, "Range in format start:end")->required();
     app.add_option("range_types", r_types, "Range in format start:end")->required();
+    app.add_option("-m,--compute-matrices", compute_matrices, "Compute matrices");
+    app.add_option("-b,--compute-bases", compute_bases, "Compute bases");
+    app.add_option("-e,--even-edges", even_edges, "Use even edges");
+    app.add_option("-o,--overwrite", overwrite, "Overwrite existing files");
+
 
     CLI11_PARSE(app, argc, argv);
 
-    // Example usage
-    for (int l =10; l < 15; ++l) {
-        for (int k = 0; k < 4; ++k) {
-            // for (bool even_edges : {true}) {
-            for (bool even_edges : {true, false}) {
-                KneisslerGVS gvs(l, k, even_edges);
-                
-                tic();
-                gvs.build_basis(true);
-                toc();
-                // test_basis_vs_ref(gvs);
+    // Check if the ranges are valid
+    if (r_loops.start < 0 || r_loops.end < r_loops.start) {
+        std::cerr << "Invalid range for loops: " << r_loops.start << ":" << r_loops.end << std::endl;
+        return 1;
+    }
+    if (r_types.start < 0 || r_types.end < r_types.start || r_types.end > 3) {
+        std::cerr << "Invalid range for types: " << r_types.start << ":" << r_types.end << std::endl;
+        return 1;
+    }
 
-                if (k>=2) {
-                    KneisslerContract D(l,k, even_edges);
-                    tic();
-                    D.build_matrix(true);
-                    toc();
-                //     test_matrix_vs_ref(D);
-                }
+    for (int l =r_loops.start; l <= r_loops.end; ++l) {
+        for (int k = r_types.start; k <= r_types.end; ++k) {
+            // for (bool even_edges : {true}) {
+            KneisslerGVS gvs(l, k, even_edges);
+            
+            if (compute_bases) {
+                tic();
+                gvs.build_basis(overwrite);
+                toc();
             }
+            // test_basis_vs_ref(gvs);
+
+            if (compute_matrices && k>=2) {
+                KneisslerContract D(l,k, even_edges);
+                tic();
+                D.build_matrix(overwrite);
+                toc();
+            //     test_matrix_vs_ref(D);
+            }
+            
         }
     }
 
