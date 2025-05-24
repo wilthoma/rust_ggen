@@ -9,7 +9,9 @@ use std::error::Error;
 use std::thread;
 use std::time::Instant;
 use rayon::prelude::*;
-
+use indicatif::{ProgressBar, ProgressStyle};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use std::ffi::{CString, CStr};
 use std::os::raw::c_char;
@@ -363,7 +365,7 @@ pub fn create_geng_ref(l: usize, d : usize) {
     }
 }
 
-const BATCH_SIZE: usize = 10000;
+const BATCH_SIZE: usize = 64000;
 
 // pub fn canonicalize_and_dedup_g6<I>(g6_iter: I) -> Result<HashSet<String>, Box<dyn Error>>
 // where
@@ -388,14 +390,16 @@ const BATCH_SIZE: usize = 10000;
 // }
 
 /// Run g6 strings through `labelg` in batches and deduplicate the canonical results.
-pub fn canonicalize_and_dedup_g6<I>(
-    g6_iter: I,
+pub fn canonicalize_and_dedup_g6(
+    g6_list: &Vec<String>,
+    labelg_path: &str,
+    // g6_iter: I,
 ) -> Result<HashSet<String>, Box<dyn Error>>
-where
-    I: IntoIterator<Item = String>,
+// where
+//     I: IntoIterator<Item = String>,
 {
     let mut canonical_set = HashSet::new();
-    let labelg_path = "labelg"; // Path to the labelg executable
+    // let labelg_path = "labelg"; // Path to the labelg executable
 
     // let mut batch = Vec::with_capacity(BATCH_SIZE);
     // for g6 in g6_iter.into_iter() {
@@ -406,13 +410,31 @@ where
     //         batch.clear();
     //     }
     // }
-    let mut all_g6: Vec<String> = g6_iter.into_iter().collect();
-    let batches: Vec<_> = all_g6.chunks(BATCH_SIZE).map(|c| c.to_vec()).collect();
+    // let mut all_g6: Vec<String> = g6_iter.into_iter().collect();
+    let batches: Vec<_> = g6_list.chunks(BATCH_SIZE).map(|c| c.to_vec()).collect();
+
+    let bar = ProgressBar::new(batches.len() as u64);
+    bar.set_style(
+        ProgressStyle::with_template(
+            "[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) ETA: {eta_precise}",
+        )
+        .unwrap()
+        .progress_chars("#>-"),
+    );
 
     let results: Vec<HashSet<String>> = batches
         .par_iter()
-        .map(|batch| run_labelg_batch(batch, labelg_path).unwrap())
+        .map_init(
+            || bar.clone(),
+            |bar, batch| {
+                let res = run_labelg_batch(batch, labelg_path).unwrap();
+                bar.inc(1);
+                res
+            },
+        )
         .collect();
+
+    bar.finish_with_message("Canonicalization done");
 
     for res in results {
         let canonicals = res;
@@ -448,6 +470,8 @@ fn run_labelg_batch(
             // We ignore errors here; the read side handles subprocess failure
             let _ = writeln!(stdin, "{}", g6);
         }
+        // Most important part: close stdin to signal EOF to labelg
+        drop(stdin);
     });
 
     // Read from stdout in the main thread
@@ -486,7 +510,7 @@ pub fn is_satisfiable(g: usize, d: usize) -> bool {
     true
 }
 
-pub fn generate_graphs(g : usize, d : usize) -> Result<(), Box<dyn std::error::Error>> {
+pub fn generate_graphs(g : usize, d : usize, labelg_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     // d is the defect
     println!("Generating graphs with genus {} and defect {}...", g, d);
 
@@ -504,21 +528,68 @@ pub fn generate_graphs(g : usize, d : usize) -> Result<(), Box<dyn std::error::E
 
     let filename = format!("data/graphs{}_{}.g6", g, d);
     if d>0 {
+
         // contract an edge
         let otherfilename = format!("data/graphs{}_{}.g6", g, d-1);
         let g6s = Graph::load_from_file(&otherfilename)?;
-        let g6list: Vec<String> = g6s
-            .par_iter()
-            .map(|s| Graph::from_g6(s))
-            .flat_map_iter(|g| (0..=e).filter_map(move |idx| g.contract_edge_opt(idx)))
-            .map(|g| g.to_g6())
-            .collect();
+        let total = g6s.len();
+        let bar = ProgressBar::new(total as u64);
+        bar.set_style(
+            ProgressStyle::with_template(
+                "[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) ETA: {eta_precise}",
+            )
+            .unwrap()
+            .progress_chars("#>-"),
+        );
+        // let counter = Arc::new(AtomicUsize::new(0));
+        let start = Instant::now();
+        // let g6list: Vec<String> = g6s
+        //     .par_iter()
+        //     .map(|s| Graph::from_g6(s))
+        //     .flat_map_iter(|g| (0..=e).filter_map(move |idx| g.contract_edge_opt(idx)))
+        //     .map(|g| g.to_g6())
+        //     .collect();
+        let g6list_pre = g6s
+        .par_iter()
+        .map_init(
+            || {
+                let bar = bar.clone();
+                // let counter = counter.clone();
+                // (bar, counter)
+                bar
+            },
+            |bar, s| {
+                let g = Graph::from_g6(s);
+                // counter.fetch_add(1, Ordering::Relaxed);
+                bar.inc(1);
+                (0..=e)
+                    .filter_map(move |idx| g.contract_edge_opt(idx))
+                    .map(|g| g.to_g6())
+                    .collect::<Vec<_>>()
+            },
+        );
+        // println!("{} graphs processed in {:.2?}", total, start.elapsed());
+
+        let g6list: Vec<String> = g6list_pre.flatten()
+        .collect();
+
+        let msg = format!(
+            "Done in {:.2?} — total graphs: {}",
+            start.elapsed(),
+            g6list.len()
+        );
+        bar.finish_with_message(msg);
+
+
+
         println!("{} graphs generated, deduplicating...", g6list.len());
         let start = Instant::now();
-        let g6_canon = canonicalize_and_dedup_g6(g6list)?;
+        let g6_canon: HashSet<String> = canonicalize_and_dedup_g6(&g6list, labelg_path)?;
         println!("Deduplication took {:.2?}, {} unique graphs remaining.", start.elapsed(), g6_canon.len());
         let g6_vec: Vec<String> = g6_canon.into_iter().collect();
+        println!("Saving {} graphs to file {}", g6_vec.len(), filename);
         Graph::save_to_file(&g6_vec, &filename)?;
+        println!("Done.");
 
     } else if d==0 {
         // start with the tetrastring
@@ -541,8 +612,17 @@ pub fn generate_graphs(g : usize, d : usize) -> Result<(), Box<dyn std::error::E
             println!("{} graphs loaded from {}...", l2, fname2);
             let g6s1 = Graph::load_from_file(&fname1)?;
             let g6s2 = Graph::load_from_file(&fname2)?;
-            let g6s1 = g6s1.into_iter().map(|s| Graph::from_g6(&s)).collect::<Vec<_>>();
-            let g6s2 = g6s2.into_iter().map(|s| Graph::from_g6(&s)).collect::<Vec<_>>();
+            let total = g6s1.len()* g6s2.len();
+            let bar = ProgressBar::new(total as u64);
+            bar.set_style(
+                ProgressStyle::with_template(
+                    "[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) ETA: {eta_precise}",
+                )
+                .unwrap()
+                .progress_chars("#>-"),
+            );
+            let g6s1 = g6s1.into_par_iter().map(|s| Graph::from_g6(&s)).collect::<Vec<_>>();
+            let g6s2 = g6s2.into_par_iter().map(|s| Graph::from_g6(&s)).collect::<Vec<_>>();
             for g1 in g6s1.iter() {
                 let e1 = g1.edges.len();
                 for g2 in g6s2.iter() {
@@ -555,8 +635,10 @@ pub fn generate_graphs(g : usize, d : usize) -> Result<(), Box<dyn std::error::E
                             g6list.push(ggg.to_g6());
                         }
                     }
+                    bar.inc(1);
                 }
             }
+            bar.finish_with_message("Done.");
         }
 
         // add a tetra across an edge
@@ -566,15 +648,23 @@ pub fn generate_graphs(g : usize, d : usize) -> Result<(), Box<dyn std::error::E
             let otherfname = format!("data/graphs{}_0.g6", l1);
             let g6s = Graph::load_from_file(&otherfname)?;
             println!("{} graphs loaded from {}...", g6s.len(), otherfname);
+            let total = g6s.len();
+            let bar = ProgressBar::new(total as u64);
+            bar.set_style(
+                ProgressStyle::with_template(
+                    "[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) ETA: {eta_precise}",
+                )
+                .unwrap()
+                .progress_chars("#>-"),
+            );
             for (id,gg) in g6s.into_iter().map(|s| Graph::from_g6(&s)).enumerate(){
-                if id % 100 == 0 {
-                    println!("{} graphs processed...", id);
-                }
                 for i in 0..gg.edges.len() {
                     let ggg = gg.replace_edge_by_tetra(i);
                     g6list.push(ggg.to_g6());
                 }
+                bar.inc(1);
             }
+            bar.finish_with_message("Done.");
         }
         
         // add graphs obtained by connecting two edges
@@ -584,27 +674,56 @@ pub fn generate_graphs(g : usize, d : usize) -> Result<(), Box<dyn std::error::E
             let g6s = Graph::load_from_file(&otherfname)?;
             println!("{} graphs loaded from {}...", g6s.len(), otherfname);
             let ee = e-3;
+            
+            let total = g6s.len();
+            let bar2 = ProgressBar::new(total as u64);
+            bar2.set_style(
+                ProgressStyle::with_template(
+                    "[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) ETA: {eta_precise}",
+                )
+                .unwrap()
+                .progress_chars("#>-"),
+            );
 
             let new_g6s: Vec<String> = g6s
                 .par_iter()
                 .enumerate()
-                .flat_map_iter(|(id, s)| {
-                    if id % 1000 == 0 {
-                        println!("{} graphs processed...", id);
-                    }
+                .flat_map_iter(|(_id, s)| {
                     let gg = Graph::from_g6(s);
-                    // let gg = gg.clone();
-                    (0..ee)
-                        .flat_map(move |i| {
-                            let gg = gg.clone();
-                            ((i + 1)..ee).map(move |j| {
-                                let ggg = gg.add_edge_across(i, j);
-                                ggg.to_g6()
-                            })
-                        })
-                        .collect::<Vec<_>>()
+                    let mut local_vec = Vec::new();
+                    for i in 0..ee {
+                        for j in (i + 1)..ee {
+                            let ggg = gg.add_edge_across(i, j);
+                            local_vec.push(ggg.to_g6());
+                        }
+                    }
+                    // Update progress bar for this chunk
+                    bar2.inc(1);
+                    local_vec
                 })
                 .collect();
+
+            bar2.finish_with_message("Done.");
+            // let new_g6s: Vec<String> = g6s
+            //     .par_iter()
+            //     .enumerate()
+            //     .flat_map_iter(|(id, s)| {
+            //         // if id % 1000 == 0 {
+            //         //     println!("{} graphs processed...", id);
+            //         // }
+            //         let gg = Graph::from_g6(s);
+            //         // let gg = gg.clone();
+            //         (0..ee)
+            //             .flat_map(move |i| {
+            //                 let gg = gg.clone();
+            //                 ((i + 1)..ee).map(move |j| {
+            //                     let ggg = gg.add_edge_across(i, j);
+            //                     ggg.to_g6()
+            //                 })
+            //             })
+            //             .collect::<Vec<_>>()
+            //     })
+            //     .collect();
 
             g6list.extend(new_g6s);
         }
@@ -615,7 +734,7 @@ pub fn generate_graphs(g : usize, d : usize) -> Result<(), Box<dyn std::error::E
 
         println!("{} graphs generated, deduplicating...", g6list.len());
         let start = Instant::now();
-        let g6_canon = canonicalize_and_dedup_g6(g6list)?;
+        let g6_canon: HashSet<String> = canonicalize_and_dedup_g6(&g6list, labelg_path)?;
         println!("Deduplication took {:.2?}, {} unique graphs remaining.", start.elapsed(), g6_canon.len());
 
         let g6_vec: Vec<String> = g6_canon.into_iter().collect();
@@ -720,7 +839,7 @@ mod tests {
         ];
 
 
-        let result = canonicalize_and_dedup_g6(g6_graphs.clone());
+        let result: Result<HashSet<String>, Box<dyn Error + 'static>> = canonicalize_and_dedup_g6(&g6_graphs, "labelg");
         match result {
             Ok(canon_set) => {
                 // Should deduplicate the first three, so only 2 canonical forms

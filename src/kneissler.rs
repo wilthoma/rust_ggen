@@ -147,21 +147,21 @@ pub fn compute_all_kneissler_graphs(nloops : usize, ntype: usize) {
     let fname = kneissler_filename(nloops, ntype);
     let k = nloops - 1;
     if ntype == 0 {
-        let gs = all_barrel_graphs(k).map(|g| g.to_g6());
-        let gs2 = canonicalize_and_dedup_g6(gs).unwrap().into_iter().collect::<Vec<_>>();
+        let gs = all_barrel_graphs(k).map(|g| g.to_g6()).collect::<Vec<_>>();
+        let gs2 = canonicalize_and_dedup_g6(&gs, "labelg").unwrap().into_iter().collect::<Vec<_>>();
         Graph::save_to_file(&gs2, &fname).unwrap();
     } else if ntype == 1 {
         let gs = all_tbarrel_graphs(k)
             .chain(all_xtbarrel_graphs(k))
-            .map(|g| g.to_g6());
-        let gs2 = canonicalize_and_dedup_g6(gs).unwrap().into_iter().collect::<Vec<_>>();
+            .map(|g| g.to_g6()).collect::<Vec<_>>();
+        let gs2 = canonicalize_and_dedup_g6(&gs, "labelg").unwrap().into_iter().collect::<Vec<_>>();
         Graph::save_to_file(&gs2, &fname).unwrap();
     } else if ntype == 2 {
         let gs = all_barrel_graphs(k)
             .chain(all_triangle_graphs(k))
             .chain(all_hgraph_graphs(k))
-            .map(|g| g.to_g6());
-        let gs2 = canonicalize_and_dedup_g6(gs).unwrap().into_iter().collect::<Vec<_>>();
+            .map(|g| g.to_g6()).collect::<Vec<_>>();
+        let gs2 = canonicalize_and_dedup_g6(&gs, "labelg").unwrap().into_iter().collect::<Vec<_>>();
         Graph::save_to_file(&gs2, &fname).unwrap();
     } else if ntype == 3 {
         // load the type 0 and type 2 graphs from file
