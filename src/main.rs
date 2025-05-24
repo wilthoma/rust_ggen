@@ -52,6 +52,13 @@ fn main() {
                 .action(clap::ArgAction::SetTrue)
         )
         .arg(
+            Arg::new("nobuild")
+                .long("nobuild")
+                .required(false)
+                .help("Do not generate graphs.")
+                .action(clap::ArgAction::SetTrue)
+        )
+        .arg(
             Arg::new("test")
                 .long("test")
                 .required(false)
@@ -88,6 +95,7 @@ fn main() {
     let overwrite = *matches.get_one::<bool>("overwrite").unwrap_or(&false);
     let test = *matches.get_one::<bool>("test").unwrap_or(&false);
     let gen_ref = *matches.get_one::<bool>("ref").unwrap_or(&false);
+    let nobuild = *matches.get_one::<bool>("nobuild").unwrap_or(&false);
 
     let num_threads: usize = *matches.get_one::<usize>("num_threads").expect("Invalid number of threads");
     let n_loops_min: usize = *matches.get_one::<usize>("min_loops").expect("Invalid number of min loops");
@@ -144,11 +152,13 @@ fn main() {
             let duration = start.elapsed();
             println!("Time elapsed: {:?}", duration);
         }
-        let start = std::time::Instant::now();
-        println!("Generating graphs for {} loops and defect {}", n_loops, n_defect);
-        generate_graphs(n_loops, n_defect, labelg_path).unwrap();
-        let duration = start.elapsed();
-        println!("Time elapsed: {:?}", duration);
+        if !nobuild {
+            let start = std::time::Instant::now();
+            println!("Generating graphs for {} loops and defect {}", n_loops, n_defect);
+            generate_graphs(n_loops, n_defect, labelg_path).unwrap();
+            let duration = start.elapsed();
+            println!("Time elapsed: {:?}", duration);
+        }
         if test {
             compare_file_to_ref(n_loops, n_defect);
         }
