@@ -1,13 +1,13 @@
 mod graphs;
-mod kneissler;
+// mod kneissler;
 // mod nauty_interface;
 // use nauty_interface::*;
-mod nauty_interface2;
-mod bliss_interface;
-use nauty_interface2::*;
-use bliss_interface::*;
+// mod nauty_interface2;
+// mod bliss_interface;
+// use nauty_interface2::*;
+// use bliss_interface::*;
 use graphs::*;
-use kneissler::*;
+// use kneissler::*;
 use clap::{Command, Arg};
 
 fn main() {
